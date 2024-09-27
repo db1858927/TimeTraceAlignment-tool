@@ -1,7 +1,7 @@
-## TimeTraceAlignment Tool
+# TimeTraceAlignment Tool
 
-# Overview
+## Overview
 
-# Prerequisites
+## Prerequisites
 
-# Installation and Launch
+## Installation and Launch
