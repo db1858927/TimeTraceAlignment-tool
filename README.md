@@ -37,4 +37,4 @@ types are:
 
 ```bash
 Example Usage:
-python main.py -log example_log.xes -decl example_constraints.decl -dom MTL```
+python main.py -log example_log.xes -decl example_constraints.decl -dom MTL
