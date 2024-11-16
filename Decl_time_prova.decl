@@ -1,0 +1,10 @@
+activity A
+bind A: duration
+duration: integer between 2 and 5
+activity B
+activity C
+activity D
+activity E
+Response[A, B] | | |B,2,3,h/A,2,3,h
+Chain Succession[C, D] | | |C,2,3,h/D,2,3,h
+Existence[D] | |D,3,4,h

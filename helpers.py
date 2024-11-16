@@ -1,12 +1,12 @@
 import re
 
 def check_duration_exists(input_lines):
-    if 'Duration' in input_lines:
+    if 'duration' in input_lines:
             return True
     return False
 
 def check_timelags_exists(input_lines):
-    if 'Time-Lags' in input_lines:
+    if 'time-lags' in input_lines:
             return True
     return False
 
@@ -20,7 +20,7 @@ def extract_activity(line):
 
 def extract_duration(line):
     # Espressione regolare per catturare la durata dalla riga 'Duration: integer between 1 and 4'
-    duration_pattern = re.compile(r'Duration:\s*(integer|float)\s*between\s*(\d+(\.\d+)?)\s*and\s*(\d+(\.\d+)?)', re.IGNORECASE)
+    duration_pattern = re.compile(r'duration:\s*(integer|float)\s*between\s*(\d+(\.\d+)?)\s*and\s*(\d+(\.\d+)?)', re.IGNORECASE)
     match = duration_pattern.match(line)
     if match:
         min_duration = match.group(2)
@@ -30,7 +30,7 @@ def extract_duration(line):
 
 def extract_timelags(line):
     # Espressione regolare per catturare la durata dalla riga 'Duration: integer between 1 and 4'
-    timelags_pattern = re.compile(r'Time-Lags\s*(\w+)-(\w+):\s*(integer|float)\s*between\s*(\d+(\.\d+)?)\s*and\s*(\d+(\.\d+)?)', re.IGNORECASE)
+    timelags_pattern = re.compile(r'time-lags\s*(\w+)-(\w+):\s*(integer|float)\s*between\s*(\d+(\.\d+)?)\s*and\s*(\d+(\.\d+)?)', re.IGNORECASE)
     match = timelags_pattern.match(line)
     if match:
         activity1 = match.group(1)
@@ -42,8 +42,8 @@ def extract_timelags(line):
     return None, None, None, None
 
 def process_duration(file_path):
+    results = []  # Usa una lista per i risultati
     current_activity = None
-    results = []
 
     with open(file_path, 'r') as file:
         for line in file:
@@ -58,10 +58,21 @@ def process_duration(file_path):
             # Estrai la durata
             min_duration, max_duration = extract_duration(line)
             if min_duration and max_duration and current_activity:
-                results.append((current_activity, min_duration, max_duration))
+                # Controlla se l'attività è già presente nei risultati
+                duplicate = False
+                for result in results:
+                    if result[0] == current_activity and result[1] == min_duration and result[2] == max_duration:
+                        duplicate = True
+                        break
+
+                # Aggiungi solo se non è un duplicato
+                if not duplicate:
+                    results.append((current_activity, min_duration, max_duration))
+                
                 current_activity = None  # Resetta l'attività corrente dopo aver aggiunto
 
     return results
+
 
 def process_timelags(file_path):
     
@@ -130,12 +141,18 @@ def process_declare(automata_dict, user_input, events):
 
     # -----------EXISTENCE TEMPLATE-------------------#
     def handle_existence(activity,min_time,max_time):
+        activity = activity.strip()  # Rimuove spazi da activity1
+        
+
         result = f";existence\n(cur_state_s a0)\n(automaton a0 {activity} a1)\n(final_state_s a1)\n"
         if (user_input == 'MTL' or user_input == 'MTL-d'):
             result += f"\n(= (min_t_condition a0 a1 {activity}) {min_time})\n(= (max_t_condition a0 a1 {activity}) {max_time})\n"
         return result
     # -----------CHOICE TEMPLATE-------------------;
     def handle_choice(activity1, activity2, time_constraints):
+        activity1 = activity1.strip()  # Rimuove spazi da activity1
+        activity2 = activity2.strip()
+
         result = f";choice\n(cur_state_s b0)\n(automaton b0 {activity1} b1)(automaton b0 {activity2} b1)\n(final_state_s b1)\n"
        
         if (user_input == 'MTL' or user_input == 'MTL-d'):
@@ -148,6 +165,9 @@ def process_declare(automata_dict, user_input, events):
             return result
    
     def handle_exclusive_choice(activity1, activity2, time_constraints):
+        activity1 = activity1.strip()  # Rimuove spazi da activity1
+        activity2 = activity2.strip()
+
         result = f";exclusive-choice\n(cur_state_s c0)\n(automaton c0 {activity2} c1)(automaton c0 {activity1} c3)(automaton c3 {activity2} c2)(automaton c1 {activity1} c2)\n(final_state_s c0)(final_state_s c1)(final_state_s c3)\n"
         transitions = [
             ('c0', 'c3', activity1),
@@ -172,23 +192,36 @@ def process_declare(automata_dict, user_input, events):
     
     #----------------RELATION TEMPLATE-------------------
     def handle_response(activity1, activity2, time_constraints):
+        activity1 = activity1.strip()  # Rimuove spazi da activity1
+        activity2 = activity2.strip()
+
         result = f";Response \n(cur_state_s d0)\n(automaton d0 {activity1} d1)\n(automaton d1 {activity2} d0)\n(final_state_s d0)"
-        if (user_input == 'MTL' or user_input == 'MTL-d'):
+        if user_input in ['MTL', 'MTL-d']:
             result += f"\n(clock d0 d1)\n\n"
 
+            # Itera sui vincoli temporali
             for (act, min_time, max_time) in time_constraints:
-                if act:
+                if act == activity2:
                     result += f"(= (min_t_condition d1 d0 {activity2}) {min_time})\n"
                     result += f"(= (max_t_condition d1 d0 {activity2}) {max_time})\n"
-                else:
-                    result += f"(= (min_t_condition d1 d0 {activity2}) 0)\n"
-                    result += f"(= (max_t_condition d1 d0 {activity2}) 10000)\n"
-                
+                elif act == activity1:
+                    result += f"(= (min_t_condition d0 d1 {activity1}) {min_time})\n"
+                    result += f"(= (max_t_condition d0 d1 {activity1}) {max_time})\n"
+            
+            # Se non ci sono vincoli temporali specifici, usa valori di default
+            if not any(act == activity1 for act, _, _ in time_constraints):
                 result += f"(= (min_t_condition d0 d1 {activity1}) 0)\n"
                 result += f"(= (max_t_condition d0 d1 {activity1}) 10000)\n"
+            if not any(act == activity2 for act, _, _ in time_constraints):
+                result += f"(= (min_t_condition d1 d0 {activity2}) 0)\n"
+                result += f"(= (max_t_condition d1 d0 {activity2}) 10000)\n"
+
         return result
 
     def handle_alternate_response(activity1, activity2, time_constraints):
+        activity1 = activity1.strip()  # Rimuove spazi da activity1
+        activity2 = activity2.strip()
+
         result = f";Alternate Response \n(cur_state_s e0)\n(automaton e0 {activity1} e1)(automaton e1 {activity2} e0)(automaton e1 {activity1} e2)\n(final_state_s e0)"
         if (user_input == 'MTL' or user_input == 'MTL-d'):
             result += f"\n(clock e0 e1)\n\n"
@@ -207,6 +240,9 @@ def process_declare(automata_dict, user_input, events):
     
     
     def handle_precedence(activity1, activity2,time_constraints):
+        activity1 = activity1.strip()  # Rimuove spazi da activity1
+        activity2 = activity2.strip()
+
         result = f";Precedence \n(cur_state_s g0)(automaton g0 {activity2} g1)(automaton g0 {activity1} g2)(automaton g2 {activity2} g3)(final_state_s g0)(final_state_s g2)(final_state_s g3)\n"
         if (user_input == 'MTL' or user_input == 'MTL-d'):
             result += f"\n(clock g0 g2)\n\n"
@@ -225,6 +261,9 @@ def process_declare(automata_dict, user_input, events):
 
     
     def handle_alternate_precedence(activity1, activity2,time_constraints):
+        activity1 = activity1.strip()  # Rimuove spazi da activity1
+        activity2 = activity2.strip()
+
         result = f";Alternate Precedence \n(cur_state_s h0)\n(automaton h0 {activity2} h1)(automaton h0 {activity1} h2)(automaton h2 {activity2} h0)\n(final_state_s h0)\n"
         if (user_input == 'MTL' or user_input == 'MTL-d'):
             result += f"\n(clock h0 h2)\n\n"
@@ -243,6 +282,9 @@ def process_declare(automata_dict, user_input, events):
 
     
     def handle_responded_existence(activity1, activity2,time_constraints):
+        activity1 = activity1.strip()  # Rimuove spazi da activity1
+        activity2 = activity2.strip()
+
         result = f";Responded Existence \n(cur_state_s l0)\n(automaton l0 {activity2} l1)(automaton l0 {activity1} l2)(automaton l2 {activity2} l1)\n(final_state_s l0)(final_state_s l1)\n"
         if (user_input == 'MTL' or user_input == 'MTL-d'):
             result += f"\n(clock l0 l2)\n\n"
@@ -260,6 +302,9 @@ def process_declare(automata_dict, user_input, events):
         return result
     
     def handle_co_existence(activity1, activity2,time_constraints):
+        activity1 = activity1.strip()  # Rimuove spazi da activity1
+        activity2 = activity2.strip()
+
         result = f";Co Existence \n(cur_state_s m0)\n(automaton m0 {activity2} m1)(automaton m0 {activity1} m3)(automaton m1 {activity1} m2)(automaton m3 {activity2} m2)\n(final_state_s m0)(final_state_s m2)\n"
         if (user_input == 'MTL' or user_input == 'MTL-d'):
             result += f"\n(clock m0 m1)\n(clock m0 m3)\n\n"
@@ -288,6 +333,9 @@ def process_declare(automata_dict, user_input, events):
         return result
     
     def handle_succession(activity1,activity2,time_constraints):
+        activity1 = activity1.strip()  # Rimuove spazi da activity1
+        activity2 = activity2.strip()
+
         result = f";Succession \n(cur_state_s n0)\n(automaton n0 {activity2} n1)(automaton n0 {activity1} n2)(automaton n2 {activity2} n3)(automaton n3 {activity1} n2)\n(final_state_s n0)(final_state_s n3)\n"
         if (user_input == 'MTL' or user_input == 'MTL-d'):
             result += f"\n(clock n0 n2)\n(clock n3 n2)\n\n"
@@ -309,6 +357,9 @@ def process_declare(automata_dict, user_input, events):
         return result
     
     def handle_alternate_succession(activity1,activity2,time_constraints):
+        activity1 = activity1.strip()  # Rimuove spazi da activity1
+        activity2 = activity2.strip()
+
         result = f";Alternate Succession \n(cur_state_s n0)\n(automaton n0 {activity2} n1)(automaton n0 {activity1} n2)(automaton n2 {activity2} n0)(automaton n2 {activity1} n1)\n(final_state_s n0)\n"
         if (user_input == 'MTL' or user_input == 'MTL-d'):
             result += f"\n(clock n0 n2)\n\n"
@@ -392,150 +443,167 @@ def process_declare(automata_dict, user_input, events):
     
     return automata_lines
 
-def handle_chain_res(automata_dict,events):
-
-    result=''
+def handle_chain_res(automata_dict, events):
+    result = ''
     
-    
-    for template_activity , time_constraints in automata_dict.items():
+    for template_activity, time_constraints in automata_dict.items():
         template_type = template_activity.split('[')[0].strip()
         activities_part = template_activity.split('[')[1].strip(']').strip()
         activities = activities_part.split(':')
         
         if len(activities) == 1:
-            if time_constraints[0][0]:
-                activity, min_time, max_time = time_constraints[0]
-            else:
-                # Altrimenti usa valori predefiniti
-                activity = activities[0]
-                min_time = 0
-                max_time = 10000
-        
+            activity = activities[0]
+            min_time, max_time = time_constraints[0][1], time_constraints[0][2]
+        else:
+            min_time, max_time = 0, 10000  # valori predefiniti
         
         if template_type == 'Chain Response':
+            # Struttura base
+            result += f";Chain Response \n(cur_state_s f0)\n"
+            
             for activity in activities:
-                result+=(f";Chain Response \n(cur_state_s f0)\n(automaton f0 {activity[0]} f1)(automaton f1 {activity[3]} f0)")
-            for i in range(len(events)):
-                for activity in activities:
-                    if (events[i].split(':')[0] != activity[2]):
-                        result+=(f"(automaton f1 {events[i].split(':')[0]} f2)")
-            result+=("(final_state_s f0)\n")
-            result+=("\n(clock f0 f1)\n\n")
+                result += f"(automaton f0 {activity[0]} f1)(automaton f1 {activity[3]} f0)\n"
             
-            for i in range(len(events)):
-                for activity in activities:
-                    if (events[i].split(':')[0] != activity[2]):
-                        result+=(f"(= (min_t_condition f1 f2 {events[i].split(':')[0]}) 0)\n")
-                        result+=(f"(= (max_t_condition f1 f2 {events[i].split(':')[0]}) 10000)\n")
+            for event in events:
+                event_activity = event.split(':')[0]
+                if all(event_activity != activity[2] for activity in activities):
+                    result += f"(automaton f1 {event_activity} f2)\n"
             
-            for (act, min_time, max_time) in time_constraints:
-                if (act == activity[2]):
-                    result += f"(= (min_t_condition f1 f0 {activity[3]}) {min_time})\n"
-                    result += f"(= (max_t_condition f1 f0 {activity[3]}) {max_time})\n"
-                else:
-                    result += f"(= (min_t_condition f2 f0 {activity[3]}) 0)\n"
-                    result += f"(= (max_t_condition f2 f0 {activity[3]}) 10000)\n"
+            result += "(final_state_s f0)\n"
+            result += "\n(clock f0 f1)\n\n"
             
-            result += f"(= (min_t_condition f0 f1 {activity[0]}) 0)\n"
-            result += f"(= (max_t_condition f0 f1 {activity[0]}) 10000)\n\n"
-
+            # Evitare duplicazioni nei vincoli temporali
+            processed_activities = set()
+            for act, min_time, max_time in time_constraints:
+                if act not in processed_activities:
+                    result += f"(= (min_t_condition f1 f0 {act}) {min_time})\n"
+                    result += f"(= (max_t_condition f1 f0 {act}) {max_time})\n"
+                    processed_activities.add(act)
+            
+            # Condizioni per attività non vincolate
+            for event in events:
+                event_activity = event.split(':')[0]
+                if event_activity not in processed_activities:
+                    result += f"(= (min_t_condition f1 f2 {event_activity}) 0)\n"
+                    result += f"(= (max_t_condition f1 f2 {event_activity}) 10000)\n"
+            
+            for activity in activities:
+                if activity not in processed_activities:
+                    result += f"(= (min_t_condition f0 f1 {activity[0]}) 0)\n"
+                    result += f"(= (max_t_condition f0 f1 {activity[0]}) 10000)\n\n"
+    
     return result
 
-def handle_chain_prec(automata_dict,events):
-    result=''
+
+def handle_chain_prec(automata_dict, events):
+    result = ''
     
-    for template_activity , time_constraints in automata_dict.items():
+    for template_activity, time_constraints in automata_dict.items():
         template_type = template_activity.split('[')[0].strip()
         activities_part = template_activity.split('[')[1].strip(']').strip()
         activities = activities_part.split(':')
         
         if len(activities) == 1:
-            if time_constraints[0][0]:
-                activity, min_time, max_time = time_constraints[0]
-            else:
-                # Altrimenti usa valori predefiniti
-                activity = activities[0]
-                min_time = 0
-                max_time = 10000
+            activity = activities[0]
+            min_time, max_time = time_constraints[0][1], time_constraints[0][2]
+        else:
+            min_time, max_time = 0, 10000  # valori predefiniti
         
         if template_type == 'Chain Precedence':
+            # Definizione della struttura base
+            result += f";Chain Precedence \n(cur_state_s i0)\n"
+            
             for activity in activities:
-                result+=(f";Chain Precedence \n(cur_state_s i0)\n(automaton i0 {activity[3]} i1)(automaton i0 {activity[0]} i2)")
-            for i in range(len(events)):
-                for activity in activities:
-                    if (events[i].split(':')[0] != activity[0]):
-                        result+=(f"(automaton i2 {events[i].split(':')[0]} i0)")
-            result+=("(final_state_s i0)\n")
-            result+=("\n(clock i0 i2)\n\n")
+                result += f"(automaton i0 {activity[3]} i1)(automaton i0 {activity[0]} i2)\n"
             
-            for i in range(len(events)):
-                for activity in activities:
-                    if (events[i].split(':')[0] != activity[0]):
-                        result+=(f"(= (min_t_condition i2 i0 {events[i].split(':')[0]}) 0)\n")
-                        result+=(f"(= (max_t_condition i2 i0 {events[i].split(':')[0]}) 10000)\n")
+            for event in events:
+                event_activity = event.split(':')[0]
+                if all(event_activity != activity[0] for activity in activities):
+                    result += f"(automaton i2 {event_activity} i0)\n"
             
-            for (act, min_time, max_time) in time_constraints:
-                
-                if (act == activity[2]):
-                    result += f"(= (min_t_condition i2 i0 {activity[3]}) {min_time})\n"
-                    result += f"(= (max_t_condition i2 i0 {activity[3]}) {max_time})\n"
-                else:
-                    result += f"(= (min_t_condition i2 i0 {activity[3]}) 0)\n"
-                    result += f"(= (max_t_condition i2 i0 {activity[3]}) 10000)\n"
+            result += "(final_state_s i0)\n"
+            result += "\n(clock i0 i2)\n\n"
             
-            result += f"(= (min_t_condition i0 i1 {activity[3]}) 0)\n"
-            result += f"(= (max_t_condition i0 i1 {activity[3]}) 10000)\n"
-
-            result += f"(= (min_t_condition i0 i2 {activity[0]}) 0)\n"
-            result += f"(= (max_t_condition i0 i2 {activity[0]}) 10000)\n\n"
+            # Evitare duplicazioni nei vincoli temporali
+            processed_activities = set()
+            for act, min_time, max_time in time_constraints:
+                if act not in processed_activities:
+                    result += f"(= (min_t_condition i2 i0 {act}) {min_time})\n"
+                    result += f"(= (max_t_condition i2 i0 {act}) {max_time})\n"
+                    processed_activities.add(act)
+            
+            # Condizioni per attività non vincolate
+            for event in events:
+                event_activity = event.split(':')[0]
+                if event_activity not in processed_activities:
+                    result += f"(= (min_t_condition i2 i0 {event_activity}) 0)\n"
+                    result += f"(= (max_t_condition i2 i0 {event_activity}) 10000)\n"
+            
+            for activity in activities:
+                if activity not in processed_activities:
+                    result += f"(= (min_t_condition i0 i1 {activity[3]}) 0)\n"
+                    result += f"(= (max_t_condition i0 i1 {activity[3]}) 10000)\n"
+                    result += f"(= (min_t_condition i0 i2 {activity[0]}) 0)\n"
+                    result += f"(= (max_t_condition i0 i2 {activity[0]}) 10000)\n\n"
+    
     return result
 
-def handle_chain_succ(automata_dict,events):
-    result=''
+
+def handle_chain_succ(automata_dict, events):
+    result = ''
     
-    for template_activity , time_constraints in automata_dict.items():
+    for template_activity, time_constraints in automata_dict.items():
         template_type = template_activity.split('[')[0].strip()
         activities_part = template_activity.split('[')[1].strip(']').strip()
         activities = activities_part.split(':')
         
         if len(activities) == 1:
-            if time_constraints[0][0]:
-                activity, min_time, max_time = time_constraints[0]
-            else:
-                # Altrimenti usa valori predefiniti
-                activity = activities[0]
-                min_time = 0
-                max_time = 10000
+            activity = activities[0]
+            min_time, max_time = time_constraints[0][1], time_constraints[0][2]
+        else:
+            min_time, max_time = 0, 10000  # valori predefiniti
         
         if template_type == 'Chain Succession':
+            # Definizione della struttura base
+            result += f";Chain Succession \n(cur_state_s o0)\n"
             
             for activity in activities:
-                result+=(f";Chain Succession \n(cur_state_s o0)\n(automaton o0 {activity[3]} o1)(automaton o0 {activity[0]} o2)(automaton o2 {activity[3]} o0)")
-            for i in range(len(events)):
-                for activity in activities:
-                    if (events[i].split(':')[0] != activity[3]):
-                        result+=(f"(automaton o2 {events[i].split(':')[0]} o1)")
-            result+=("(final_state_s o0)\n")
-            result+=("\n(clock o0 o2)\n\n")
+                result += f"(automaton o0 {activity[3]} o1)(automaton o0 {activity[0]} o2)(automaton o2 {activity[3]} o0)\n"
             
-            for i in range(len(events)):
-                for activity in activities:
-                    if (events[i].split(':')[0] != activity[3]):
-                        result+=(f"(= (min_t_condition o2 o1 {events[i].split(':')[0]}) 0)\n")
-                        result+=(f"(= (max_t_condition o2 o1 {events[i].split(':')[0]}) 10000)\n")
+            for event in events:
+                event_activity = event.split(':')[0]
+                if all(event_activity != activity[3] for activity in activities):
+                    result += f"(automaton o2 {event_activity} o1)\n"
             
-            for (act, min_time, max_time) in time_constraints:
-                if (act == activity[3]):
-                    result += f"(= (min_t_condition o2 o0 {activity[3]}) {min_time})\n"
-                    result += f"(= (max_t_condition o2 o0 {activity[3]}) {max_time})\n"
-                else:
-                    result += f"(= (min_t_condition o2 o0 {activity[3]}) 0)\n"
-                    result += f"(= (max_t_condition o2 o0 {activity[3]}) 10000)\n"
+            result += "(final_state_s o0)\n"
+            result += "\n(clock o0 o2)\n\n"
             
-            result += f"(= (min_t_condition o0 o1 {activity[3]}) 0)\n"
-            result += f"(= (max_t_condition o0 o1 {activity[3]}) 10000)\n"
-
-            result += f"(= (min_t_condition o0 o2 {activity[0]}) 0)\n"
-            result += f"(= (max_t_condition o0 o2 {activity[0]}) 10000)\n\n"
-
+            # Evitare duplicazioni nei vincoli temporali
+            processed_activities = set()
+            for act, min_time, max_time in time_constraints:
+                if act not in processed_activities:
+                    result += f"(= (min_t_condition o2 o0 {act}) {min_time})\n"
+                    result += f"(= (max_t_condition o2 o0 {act}) {max_time})\n"
+                    processed_activities.add(act)
+            
+            # Condizioni per attività non vincolate
+            for event in events:
+                event_activity = event.split(':')[0]
+                if event_activity not in processed_activities:
+                    result += f"(= (min_t_condition o2 o1 {event_activity}) 0)\n"
+                    result += f"(= (max_t_condition o2 o1 {event_activity}) 10000)\n"
+            
+            for activity in activities:
+                if activity not in processed_activities:
+                    result += f"(= (min_t_condition o0 o1 {activity[3]}) 0)\n"
+                    result += f"(= (max_t_condition o0 o1 {activity[3]}) 10000)\n"
+                    result += f"(= (min_t_condition o0 o2 {activity[0]}) 0)\n"
+                    result += f"(= (max_t_condition o0 o2 {activity[0]}) 10000)\n\n"
+    
     return result
+
+
+
+
+
+

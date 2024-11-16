@@ -67,17 +67,21 @@ def create_pddl_files(trace_activity, automata_list, activities_trace, automata_
                 f.write(f"(= (total_duration) 0)\n")
 
                 
-                duration_appended = []
-                #definizione delle duration
-                for i in range(len(durations)):
-                    f.write(f"\n(= (min_duration {durations[i][0]}) {durations[i][1]})\n")
-                    f.write(f"(= (max_duration {durations[i][0]}) {durations[i][2]})\n")
-                    duration_appended.append(durations[i][0])
-                
-                for i in range(len(events)):
-                    if (events[i].split(':')[0] not in duration_appended):
-                        f.write(f"\n(= (min_duration {events[i].split(':')[0]}) 0)\n")
-                        f.write(f"(= (max_duration {events[i].split(':')[0]}) 100)\n")
+                duration_appended = set()
+
+                # Definizione delle duration per ciascuna attività specificata in durations
+                for duration in durations:
+                    f.write(f"\n(= (min_duration {duration[0]}) {duration[1]})\n")
+                    f.write(f"(= (max_duration {duration[0]}) {duration[2]})\n")
+                    duration_appended.add(duration[0])
+
+                # Aggiungi la durata predefinita per ogni evento che non ha una durata specificata
+                for event in events:
+                    event_name = event.split(':')[0]  # Estrai il nome dell'evento una volta
+                    if event_name not in duration_appended:
+                        f.write(f"\n(= (min_duration {event_name}) 0)\n")
+                        f.write(f"(= (max_duration {event_name}) 100)\n")
+                        duration_appended.add(event_name)
              
             
             if (user_input == "MTL-d" or user_input =="MTL"):
